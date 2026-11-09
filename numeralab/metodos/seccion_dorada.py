@@ -12,7 +12,7 @@ import math
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
-from utilidades.evaluador_funciones import ErrorParametro
+from utilidades.evaluador_funciones import ErrorEvaluacion, ErrorParametro
 from utilidades.ecuaciones import latex_de_texto, llenar, tx, tx_pct, txp
 from utilidades.formato import fmt, fmt_pct, par
 
@@ -160,6 +160,18 @@ def _validar(a, b, objetivo, tol, max_iter, criterio):
         raise ErrorParametro("El máximo de iteraciones debe ser un entero positivo.")
 
 
+def _validar_dominio(f, a, b, puntos=41):
+    """La función debe estar definida en todo [a, b] (se revisan los extremos y puntos intermedios)."""
+    for k in range(puntos):
+        x = a + (b - a) * k / (puntos - 1)
+        try:
+            f.evaluar(x)
+        except ErrorEvaluacion:
+            raise ErrorParametro(
+                f"La función no está definida en todo el intervalo [{a:g}, {b:g}]: falla en x ≈ {x:g} "
+                "(división entre cero, raíz de un negativo o logaritmo de un número ≤ 0). Elija otro intervalo.")
+
+
 def seccion_dorada(f, a, b, objetivo="minimizar", tol=1.0, max_iter=100, criterio="relativo"):
     """Ejecuta el método.
 
@@ -167,6 +179,7 @@ def seccion_dorada(f, a, b, objetivo="minimizar", tol=1.0, max_iter=100, criteri
     criterio: "relativo" (ε_a en %, el de clase) | "longitud" (longitud del intervalo, absoluta)
     """
     _validar(a, b, objetivo, tol, max_iter, criterio)
+    _validar_dominio(f, a, b)
     max_iter = int(max_iter)
     res = ResultadoDorada(f.texto, float(a), float(b), objetivo, criterio, float(tol), max_iter)
     maxim = objetivo == "maximizar"
