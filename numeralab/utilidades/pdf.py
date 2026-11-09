@@ -5,12 +5,14 @@ import os
 
 import matplotlib
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
+from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import cm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import HRFlowable, Image, KeepTogether, PageBreak, Paragraph, SimpleDocTemplate, Spacer
+from reportlab.platypus import (BaseDocTemplate, Frame, HRFlowable, Image, NextPageTemplate, PageBreak, PageTemplate,
+                                Paragraph, Spacer, Table, TableStyle)
 
 from utilidades.ecuaciones import png_ecuacion
 
@@ -79,25 +81,59 @@ def _flowables(bloques, st, ancho_max):
     return out
 
 
-def procedimiento_pdf(nombre_metodo, funcion, mensaje, resumen, paginas):
+def _tabla(cols, filas, ancho_total):
+    """Tabla de iteraciones con encabezado rojo, filas alternadas y encabezado repetido en cada página."""
+    n = len(cols)
+    tam = 8.5 if n <= 7 else 7.5
+    enc = ParagraphStyle("enc", fontName="DV-B", fontSize=tam, leading=tam + 2, textColor=colors.white,
+                         alignment=TA_CENTER)
+    datos = [[Paragraph(html.escape(str(c)), enc) for c in cols]] + [[str(v) for v in fila] for fila in filas]
+    # ancho de cada columna proporcional al texto más largo (con un mínimo)
+    pesos = [max(len(str(cols[j])) * 0.8, *(len(str(f[j])) for f in filas), 4) for j in range(n)]
+    anchos = [ancho_total * p / sum(pesos) for p in pesos]
+    t = Table(datos, colWidths=anchos, repeatRows=1)
+    estilo = [("FONTNAME", (0, 1), (-1, -1), "DV"), ("FONTSIZE", (0, 1), (-1, -1), tam),
+              ("BACKGROUND", (0, 0), (-1, 0), ROJO), ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+              ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("TOPPADDING", (0, 0), (-1, -1), 4),
+              ("BOTTOMPADDING", (0, 0), (-1, -1), 4), ("LEFTPADDING", (0, 0), (-1, -1), 3),
+              ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+              ("LINEBELOW", (0, 0), (-1, -1), 0.4, colors.HexColor("#E5E7EB")),
+              ("BOX", (0, 0), (-1, -1), 0.8, ROJO),
+              ("FONTNAME", (0, 1), (0, -1), "DV-B")]
+    for r in range(2, len(datos), 2):
+        estilo.append(("BACKGROUND", (0, r), (-1, r), colors.HexColor("#FDECEF")))
+    t.setStyle(TableStyle(estilo))
+    return t
+
+
+def procedimiento_pdf(nombre_metodo, funcion, mensaje, resumen, paginas, tabla=None):
     """Devuelve los bytes del PDF.
 
-    resumen: bloques de `res.bloques_resumen(dec)`; paginas: lista (titulo, bloques) de `generar_pasos(res, dec)`.
+    resumen: bloques de `res.bloques_resumen(dec)`; paginas: lista (titulo, bloques) de `generar_pasos(res, dec)`;
+    tabla: (encabezados, filas) de `tabla_iteraciones(...)`; si se da, se agrega al final en hoja horizontal.
     """
     _registrar_fuentes()
     st = _estilos()
     buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=2 * cm, rightMargin=2 * cm, topMargin=1.8 * cm,
-                            bottomMargin=1.8 * cm, title=f"NumeraLab - {nombre_metodo}", author="NumeraLab")
-    ancho = A4[0] - 4 * cm
+    marg = 2 * cm
+    vertical, horizontal = A4, landscape(A4)
 
     def pie(canvas, d):
+        w = canvas._pagesize[0]
         canvas.saveState()
         canvas.setFont("DV", 8)
         canvas.setFillColor(colors.HexColor("#6B7280"))
-        canvas.drawString(2 * cm, 1 * cm, "NumeraLab · Métodos Numéricos · Universidad Piloto de Colombia")
-        canvas.drawRightString(A4[0] - 2 * cm, 1 * cm, f"Página {d.page}")
+        canvas.drawString(marg, 1 * cm, "NumeraLab · Métodos Numéricos · Universidad Piloto de Colombia")
+        canvas.drawRightString(w - marg, 1 * cm, f"Página {d.page}")
         canvas.restoreState()
+
+    doc = BaseDocTemplate(buf, pagesize=vertical, title=f"NumeraLab - {nombre_metodo}", author="NumeraLab",
+                          leftMargin=marg, rightMargin=marg, topMargin=1.8 * cm, bottomMargin=1.8 * cm)
+    f_v = Frame(marg, 1.8 * cm, vertical[0] - 2 * marg, vertical[1] - 3.6 * cm, id="v")
+    f_h = Frame(1.5 * cm, 1.6 * cm, horizontal[0] - 3 * cm, horizontal[1] - 3.2 * cm, id="h")
+    doc.addPageTemplates([PageTemplate("vertical", [f_v], onPage=pie, pagesize=vertical),
+                          PageTemplate("horizontal", [f_h], onPage=pie, pagesize=horizontal)])
+    ancho = vertical[0] - 2 * marg
 
     historia = [Paragraph("NumeraLab", st["titulo"]),
                 Paragraph(f"{html.escape(nombre_metodo)} · procedimiento completo", st["sub"]),
@@ -108,5 +144,11 @@ def procedimiento_pdf(nombre_metodo, funcion, mensaje, resumen, paginas):
     for titulo, bloques in paginas:
         historia.append(PageBreak())
         historia += _flowables(bloques, st, ancho)
-    doc.build(historia, onFirstPage=pie, onLaterPages=pie)
+    if tabla is not None:
+        cols, filas = tabla
+        historia += [NextPageTemplate("horizontal"), PageBreak(),
+                     Paragraph("Tabla de iteraciones", st["h1"]),
+                     Paragraph(f"{html.escape(nombre_metodo)} · f(x) = {html.escape(funcion)}", st["sub"]),
+                     _tabla(cols, filas, horizontal[0] - 3 * cm)]
+    doc.build(historia)
     return buf.getvalue()
