@@ -17,6 +17,7 @@ from utilidades import graficas
 from utilidades.ecuaciones import latex_de_funcion
 from utilidades.evaluador_funciones import ErrorFuncion, ErrorNumeraLab, FuncionMatematica
 from utilidades.formato import fmt, fmt_pct
+from utilidades.pdf import procedimiento_pdf
 from utilidades.tablas import tabla_iteraciones
 from web.render import ancho, latex_web, mostrar_bloques
 from web.teclado import teclado
@@ -257,10 +258,29 @@ def _mover_pagina(m, delta, n):
     st.session_state[K(m, "pag")] = min(max(st.session_state[K(m, "pag")] + delta, 0), n - 1)
 
 
+def _boton_pdf(m, res, dec, paginas):
+    """Genera el PDF una sola vez por cálculo (es lento) y ofrece su descarga."""
+    clave = (st.session_state[K(m, "firma")], dec)
+    if st.session_state.get(K(m, "pdf_clave")) != clave:
+        st.session_state[K(m, "pdf_clave")], st.session_state[K(m, "pdf")] = clave, None
+    if st.session_state.get(K(m, "pdf")) is None:
+        if st.button("Preparar PDF del procedimiento", key=K(m, "bpdf")):
+            with st.spinner("Generando PDF..."):
+                st.session_state[K(m, "pdf")] = procedimiento_pdf(
+                    NOMBRES[m], res.funcion, res.mensaje,
+                    res.bloques_resumen(dec), paginas)
+            st.rerun()
+    else:
+        st.download_button("Descargar PDF del procedimiento", st.session_state[K(m, "pdf")],
+                           file_name=f"procedimiento_{m}.pdf", mime="application/pdf", type="primary",
+                           key=K(m, "dpdf"))
+
+
 def _tab_procedimiento(m, res, dec):
     gen = m_sec.generar_pasos if m == "secante" else m_dor.generar_pasos
     paginas = gen(res, dec)
     n = len(paginas)
+    _boton_pdf(m, res, dec, paginas)
     st.session_state[K(m, "pag")] = min(st.session_state[K(m, "pag")], n - 1)
     c1, c2, c3, c4 = st.columns([1.25, 2, 1.25, 1.5], vertical_alignment="center")
     idx = st.session_state[K(m, "pag")]
