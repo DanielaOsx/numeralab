@@ -14,6 +14,7 @@ from metodos import seccion_dorada as m_dor
 from metodos.calculo import calcular
 from metodos.ejemplos import CRITERIOS, EJEMPLOS, INFO, NOMBRES, OBJETIVOS, PREDETERMINADOS
 from utilidades import graficas
+from utilidades.graficas_interactivas import CONFIG as CONFIG_GRAFICA, plotly_dorada, plotly_secante
 from utilidades.ecuaciones import latex_de_funcion
 from utilidades.evaluador_funciones import ErrorFuncion, ErrorNumeraLab, FuncionMatematica
 from utilidades.formato import fmt, fmt_pct
@@ -268,7 +269,7 @@ def _boton_pdf(m, res, dec, paginas):
             with st.spinner("Generando PDF..."):
                 st.session_state[K(m, "pdf")] = procedimiento_pdf(
                     NOMBRES[m], res.funcion, res.mensaje,
-                    res.bloques_resumen(dec), paginas)
+                    res.bloques_resumen(dec), paginas, tabla_iteraciones(m, res, dec))
             st.rerun()
     else:
         st.download_button("Descargar PDF del procedimiento", st.session_state[K(m, "pdf")],
@@ -309,13 +310,15 @@ def _tab_tabla(m, res, dec):
 
 
 def _tab_grafica(m, res, f):
-    fig = Figure(figsize=(9, 6 if m == "dorada" else 5.4), dpi=110, facecolor="white", layout="constrained")
+    st.caption("Rueda del mouse = zoom · arrastre = mover · doble clic = vista inicial · "
+               "la barra de arriba a la derecha tiene zoom de caja, acercar/alejar y descargar PNG.")
+    revision = str(st.session_state[K(m, "firma")])      # mientras no cambie el cálculo, se conserva el zoom
     if m == "secante":
-        graficas.graficar_secante(fig, f, res)
+        fig = plotly_secante(f, res, revision)
     else:
         k = st.slider("Iteración mostrada", 1, max(1, res.n_iter), key=K(m, "iter"))
-        graficas.graficar_dorada(fig, f, res, k)
-    st.pyplot(fig, **ancho(st.pyplot))
+        fig = plotly_dorada(f, res, k, revision)
+    st.plotly_chart(fig, config=CONFIG_GRAFICA, **ancho(st.plotly_chart))
 
 
 def _salidas(m, dec):
